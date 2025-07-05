@@ -13,11 +13,14 @@ import {
   Trophy,
   Stethoscope,
   Plus,
-  Trash2
+  Trash2,
+  Download,
+  Image
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { rankPatients, matchDoctors, predictMortality } from "@/lib/api";
 import { RankedPatient, DoctorMatch } from "@/types/triage";
+import { fetchPatientsFromGCS, fetchDoctorsFromGCS, getTraumaImageUrl } from "@/lib/gcs-data";
 
 interface Patient {
   id: string;
@@ -25,12 +28,17 @@ interface Patient {
   age: number;
   condition: string;
   mortalityRisk?: number;
+  medicalHistory?: string[];
+  severity?: number;
+  imageIds?: string[];
 }
 
 interface Doctor {
   id: string;
   name: string;
   specialty: string;
+  availability?: boolean;
+  experience?: number;
 }
 
 export function PatientManagement() {
@@ -236,6 +244,77 @@ export function PatientManagement() {
     }
   };
 
+  // Load data from GCS
+  const loadPatientsFromGCS = async () => {
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const gcsPatients = await fetchPatientsFromGCS();
+      const formattedPatients: Patient[] = gcsPatients.map(gcsPatient => ({
+        id: gcsPatient.id,
+        name: gcsPatient.name,
+        age: gcsPatient.age,
+        condition: gcsPatient.condition,
+        medicalHistory: gcsPatient.medicalHistory,
+        severity: gcsPatient.severity,
+        imageIds: gcsPatient.imageIds
+      }));
+      
+      setPatients(formattedPatients);
+      
+      toast({
+        title: "Patients Loaded",
+        description: `Successfully loaded ${formattedPatients.length} patients from GCS`,
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to load patients from GCS";
+      setError(errorMessage);
+      
+      toast({
+        title: "Loading Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadDoctorsFromGCS = async () => {
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const gcsDoctors = await fetchDoctorsFromGCS();
+      const formattedDoctors: Doctor[] = gcsDoctors.map(gcsDoctor => ({
+        id: gcsDoctor.id,
+        name: gcsDoctor.name,
+        specialty: gcsDoctor.specialty,
+        availability: gcsDoctor.availability,
+        experience: gcsDoctor.experience
+      }));
+      
+      setDoctors(formattedDoctors);
+      
+      toast({
+        title: "Doctors Loaded",
+        description: `Successfully loaded ${formattedDoctors.length} doctors from GCS`,
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to load doctors from GCS";
+      setError(errorMessage);
+      
+      toast({
+        title: "Loading Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Get patient by ID
   const getPatientById = (id: string) => patients.find(p => p.id === id);
   const getDoctorById = (id: string) => doctors.find(d => d.id === id);
@@ -273,7 +352,22 @@ export function PatientManagement() {
           <CardContent className="space-y-4">
             {/* Add Patient Form */}
             <div className="space-y-3 p-4 border rounded-lg">
-              <h4 className="font-medium">Add New Patient</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-medium">Add New Patient</h4>
+                <Button
+                  onClick={loadPatientsFromGCS}
+                  disabled={isLoading}
+                  size="sm"
+                  variant="outline"
+                >
+                  {isLoading ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4 mr-2" />
+                  )}
+                  Load from GCS
+                </Button>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 <Input
                   placeholder="Name"
@@ -301,36 +395,70 @@ export function PatientManagement() {
             {/* Patient List */}
             <div className="space-y-2">
               {patients.map((patient) => (
-                <div key={patient.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{patient.name}</span>
-                      <Badge variant="outline">{patient.age} years</Badge>
-                      {mortalityPredictions[patient.id] && (
-                        <Badge variant="destructive">
-                          {mortalityPredictions[patient.id]}% mortality risk
-                        </Badge>
+                <div key={patient.id} className="p-3 border rounded-lg space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{patient.name}</span>
+                        <Badge variant="outline">{patient.age} years</Badge>
+                        {patient.severity && (
+                          <Badge variant="secondary">Severity: {patient.severity}</Badge>
+                        )}
+                        {mortalityPredictions[patient.id] && (
+                          <Badge variant="destructive">
+                            {mortalityPredictions[patient.id]}% mortality risk
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{patient.condition}</p>
+                      {patient.medicalHistory && patient.medicalHistory.length > 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          <strong>History:</strong> {patient.medicalHistory.join(", ")}
+                        </p>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground">{patient.condition}</p>
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => predictPatientMortality(patient)}
+                        disabled={isLoading}
+                      >
+                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Predict Risk"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => removePatient(patient.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => predictPatientMortality(patient)}
-                      disabled={isLoading}
-                    >
-                      {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Predict Risk"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => removePatient(patient.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  
+                  {/* Medical Images */}
+                  {patient.imageIds && patient.imageIds.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Image className="w-4 h-4" />
+                        <span className="text-sm font-medium">Medical Images ({patient.imageIds.length})</span>
+                      </div>
+                      <div className="flex gap-2 overflow-x-auto">
+                        {patient.imageIds.map((imageId, index) => (
+                          <img
+                            key={index}
+                            src={getTraumaImageUrl(imageId)}
+                            alt={`Medical image ${index + 1} for ${patient.name}`}
+                            className="w-16 h-16 object-cover rounded border cursor-pointer hover:opacity-80"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -348,7 +476,22 @@ export function PatientManagement() {
           <CardContent className="space-y-4">
             {/* Add Doctor Form */}
             <div className="space-y-3 p-4 border rounded-lg">
-              <h4 className="font-medium">Add New Doctor</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-medium">Add New Doctor</h4>
+                <Button
+                  onClick={loadDoctorsFromGCS}
+                  disabled={isLoading}
+                  size="sm"
+                  variant="outline"
+                >
+                  {isLoading ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4 mr-2" />
+                  )}
+                  Load from GCS
+                </Button>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <Input
                   placeholder="Name"
