@@ -1,3 +1,5 @@
+import { supabase } from "@/integrations/supabase/client";
+
 interface GCSPatient {
   id: string;
   name: string;
@@ -26,15 +28,15 @@ const GCS_BASE_URL = 'https://storage.googleapis.com/josianne-asset-bucket';
 
 export async function fetchPatientsFromGCS(): Promise<GCSPatient[]> {
   try {
-    // For now, we'll try to fetch a common file structure
-    // This will need to be adjusted based on your actual file naming
-    const response = await fetch(`${GCS_BASE_URL}/patients/patients.json`);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch patients: ${response.statusText}`);
+    const { data, error } = await supabase.functions.invoke('fetch-gcs-data', {
+      body: { dataType: 'patients' }
+    });
+
+    if (error) {
+      console.error('Supabase function error:', error);
+      throw new Error(`Failed to fetch patients: ${error.message}`);
     }
     
-    const data = await response.json();
     return Array.isArray(data) ? data : [data];
   } catch (error) {
     console.error('Error fetching patients from GCS:', error);
@@ -44,13 +46,15 @@ export async function fetchPatientsFromGCS(): Promise<GCSPatient[]> {
 
 export async function fetchDoctorsFromGCS(): Promise<GCSDoctor[]> {
   try {
-    const response = await fetch(`${GCS_BASE_URL}/Doctors/doctors.json`);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch doctors: ${response.statusText}`);
+    const { data, error } = await supabase.functions.invoke('fetch-gcs-data', {
+      body: { dataType: 'doctors' }
+    });
+
+    if (error) {
+      console.error('Supabase function error:', error);
+      throw new Error(`Failed to fetch doctors: ${error.message}`);
     }
     
-    const data = await response.json();
     return Array.isArray(data) ? data : [data];
   } catch (error) {
     console.error('Error fetching doctors from GCS:', error);
