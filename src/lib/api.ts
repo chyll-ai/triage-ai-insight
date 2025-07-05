@@ -9,11 +9,11 @@ import {
 } from '@/types/triage';
 
 // Base API configuration
-const VERTEX_AI_URL = 'https://8748789832957820928.europe-west4-223266628372.prediction.vertexai.goog/v1/projects/223266628372/locations/europe-west4/endpoints/8748789832957820928:predict';
+const VERTEX_AI_URL = 'https://8876697120128630784.us-central1-223266628372.prediction.vertexai.goog/v1/projects/223266628372/locations/us-central1/endpoints/8876697120128630784:predict';
 const AUTH_TOKEN = 'ya29.a0AS3H6NykV8XP7bw-SGl76ntV1gtHCXcuRBv3wwRymbo6v-wCRWxT7x9JIq2Q7HBJVozFFj6qKQDk0FQcERgRTJ8SI0Qchfvj0e-pyTOBG8mooYpUG-i-TXa_HbrtUZP6FN6wgJERIwFGV3xRnhC_XfdFfU71-WmJcHSGeTK7pksW2AaCgYKASASARYSFQHGX2Miy2_dAAGqWQiyog37J0FFUg0181';
 
 // Backend API endpoints
-const BACKEND_BASE_URL = 'https://8748789832957820928.europe-west4-223266628372.prediction.vertexai.goog/v1/projects/223266628372/locations/europe-west4/endpoints/8748789832957820928';
+const BACKEND_BASE_URL = 'https://8876697120128630784.us-central1-223266628372.prediction.vertexai.goog/v1/projects/223266628372/locations/us-central1/endpoints/8876697120128630784';
 
 // Generic API call function
 async function apiCall<T>(url: string, options: RequestInit): Promise<T> {
