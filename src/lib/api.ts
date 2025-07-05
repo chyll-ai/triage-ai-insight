@@ -9,8 +9,11 @@ import {
 } from '@/types/triage';
 
 // Base API configuration
-const API_BASE_URL = 'https://8748789832957820928.europe-west4-223266628372.prediction.vertexai.goog/v1/projects/223266628372/locations/europe-west4/endpoints/8748789832957820928:predict';
+const VERTEX_AI_URL = 'https://8748789832957820928.europe-west4-223266628372.prediction.vertexai.goog/v1/projects/223266628372/locations/europe-west4/endpoints/8748789832957820928:predict';
 const AUTH_TOKEN = 'ya29.a0AS3H6NykV8XP7bw-SGl76ntV1gtHCXcuRBv3wwRymbo6v-wCRWxT7x9JIq2Q7HBJVozFFj6qKQDk0FQcERgRTJ8SI0Qchfvj0e-pyTOBG8mooYpUG-i-TXa_HbrtUZP6FN6wgJERIwFGV3xRnhC_XfdFfU71-WmJcHSGeTK7pksW2AaCgYKASASARYSFQHGX2Miy2_dAAGqWQiyog37J0FFUg0181';
+
+// Backend API endpoints
+const BACKEND_BASE_URL = 'https://8748789832957820928.europe-west4-223266628372.prediction.vertexai.goog/v1/projects/223266628372/locations/europe-west4/endpoints/8748789832957820928';
 
 // Generic API call function
 async function apiCall<T>(url: string, options: RequestInit): Promise<T> {
@@ -35,7 +38,7 @@ async function apiCall<T>(url: string, options: RequestInit): Promise<T> {
 
 // Rank patients endpoint
 export async function rankPatients(request: RankPatientsRequest): Promise<RankPatientsResponse> {
-  return apiCall<RankPatientsResponse>(`${API_BASE_URL}/rank_patients`, {
+  return apiCall<RankPatientsResponse>(`${BACKEND_BASE_URL}/rank_patients`, {
     method: 'POST',
     body: JSON.stringify(request),
   });
@@ -43,7 +46,7 @@ export async function rankPatients(request: RankPatientsRequest): Promise<RankPa
 
 // Match doctors endpoint
 export async function matchDoctors(request: MatchDoctorsRequest): Promise<MatchDoctorsResponse> {
-  return apiCall<MatchDoctorsResponse>(`${API_BASE_URL}/match_doctors`, {
+  return apiCall<MatchDoctorsResponse>(`${BACKEND_BASE_URL}/match_doctors`, {
     method: 'POST',
     body: JSON.stringify(request),
   });
@@ -81,7 +84,7 @@ export async function predictMortality(patientDescription: string): Promise<numb
   };
 
   try {
-    const response = await fetch(API_BASE_URL, {
+    const response = await fetch(VERTEX_AI_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${AUTH_TOKEN}`,
