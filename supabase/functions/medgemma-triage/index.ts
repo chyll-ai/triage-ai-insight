@@ -83,8 +83,9 @@ Return only valid JSON:`
         }
       ],
       generationConfig: {
-        maxOutputTokens: 500,
-        temperature: 0.1
+        maxOutputTokens: 1000,
+        temperature: 0.1,
+        responseMimeType: "application/json"
       }
     };
 
@@ -140,7 +141,26 @@ Return only valid JSON:`
     // Try to parse the JSON response
     try {
       console.log('Attempting to parse JSON response...');
-      const parsed = JSON.parse(responseText);
+      
+      // Clean up the response text if it's truncated
+      let cleanResponseText = responseText.trim();
+      
+      // If response doesn't end with }, try to fix common truncation issues
+      if (!cleanResponseText.endsWith('}')) {
+        console.log('Response appears truncated, attempting to fix...');
+        
+        // Find the last complete field and close the JSON
+        const lastCompleteField = cleanResponseText.lastIndexOf('"');
+        if (lastCompleteField > -1) {
+          cleanResponseText = cleanResponseText.substring(0, lastCompleteField + 1);
+          if (!cleanResponseText.endsWith('}')) {
+            cleanResponseText += '}';
+          }
+        }
+      }
+      
+      console.log('Cleaned response text:', cleanResponseText);
+      const parsed = JSON.parse(cleanResponseText);
       console.log('Successfully parsed JSON:', parsed);
       
       const result = {
@@ -157,12 +177,15 @@ Return only valid JSON:`
     } catch (parseError) {
       console.error('JSON parse error:', parseError, 'Response text:', responseText);
       
-      // Return a fallback response instead of throwing an error
+      // Extract basic info from the truncated response
+      const summaryMatch = responseText.match(/"summary":\s*"([^"]+)/);
+      const urgencyMatch = responseText.match(/"urgency_level":\s*"([^"]+)/);
+      
       const fallbackResult = {
-        summary: 'Unable to parse AI response. Raw response: ' + responseText.substring(0, 200),
-        urgency_level: 'low',
-        red_flags: ['Unable to parse AI response'],
-        recommended_actions: ['Manual review required', 'Retry analysis']
+        summary: summaryMatch ? summaryMatch[1] : 'Unable to parse complete AI response',
+        urgency_level: urgencyMatch ? urgencyMatch[1] : 'low',
+        red_flags: ['Response was truncated - manual review required'],
+        recommended_actions: ['Manual review required', 'Retry analysis with more specific information']
       };
       
       return new Response(JSON.stringify(fallbackResult), {
