@@ -36,8 +36,14 @@ export async function fetchPatientsFromGCS(): Promise<GCSPatient[]> {
       console.error('Supabase function error:', error);
       throw new Error(`Failed to fetch patients: ${error.message}`);
     }
+
+    // Handle the new response format
+    if (data && typeof data === 'object' && data.status === 'warning') {
+      console.warn('Warning from GCS function:', data.error);
+      return data.data || [];
+    }
     
-    return Array.isArray(data) ? data : [data];
+    return Array.isArray(data) ? data : (data ? [data] : []);
   } catch (error) {
     console.error('Error fetching patients from GCS:', error);
     throw error;
@@ -54,8 +60,14 @@ export async function fetchDoctorsFromGCS(): Promise<GCSDoctor[]> {
       console.error('Supabase function error:', error);
       throw new Error(`Failed to fetch doctors: ${error.message}`);
     }
+
+    // Handle the new response format
+    if (data && typeof data === 'object' && data.status === 'warning') {
+      console.warn('Warning from GCS function:', data.error);
+      return data.data || [];
+    }
     
-    return Array.isArray(data) ? data : [data];
+    return Array.isArray(data) ? data : (data ? [data] : []);
   } catch (error) {
     console.error('Error fetching doctors from GCS:', error);
     throw error;
