@@ -103,15 +103,37 @@ ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
 
     console.log('Parsing Vertex AI response...');
     const data = await response.json();
-    console.log('Response data structure:', JSON.stringify(data, null, 2));
+    console.log('Full Vertex AI response:', JSON.stringify(data, null, 2));
+    
+    // Check if we have the expected structure
+    if (!data.predictions || !Array.isArray(data.predictions) || data.predictions.length === 0) {
+      console.error('Unexpected response structure - no predictions array:', data);
+      throw new Error('Vertex AI returned unexpected response structure');
+    }
+    
+    const prediction = data.predictions[0];
+    console.log('First prediction:', JSON.stringify(prediction, null, 2));
+    
+    if (!prediction.candidates || !Array.isArray(prediction.candidates) || prediction.candidates.length === 0) {
+      console.error('No candidates in prediction:', prediction);
+      throw new Error('Vertex AI returned no candidates');
+    }
+    
+    const candidate = prediction.candidates[0];
+    console.log('First candidate:', JSON.stringify(candidate, null, 2));
+    
+    if (!candidate.content || !candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
+      console.error('No content parts in candidate:', candidate);
+      throw new Error('Vertex AI returned no content parts');
+    }
     
     // Extract the response text and parse the JSON
-    const responseText = data.predictions[0]?.candidates[0]?.content?.parts[0]?.text;
+    const responseText = candidate.content.parts[0]?.text;
     console.log('Extracted response text:', responseText);
     
     if (!responseText) {
-      console.error('No response text found in data:', data);
-      throw new Error('No response from Vertex AI');
+      console.error('No text found in content parts:', candidate.content.parts);
+      throw new Error('No response text from Vertex AI');
     }
 
     // Try to parse the JSON response
