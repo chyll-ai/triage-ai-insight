@@ -31,8 +31,8 @@ export interface CurrentVisitData {
   chiefComplaint: string;
   currentSymptoms: string;
   clinicalNotes: string;
-  onsetDate: string;
-  symptomDuration: string;
+  onsetDate?: string;
+  symptomDuration?: string;
 }
 
 // Combined patient info for triage

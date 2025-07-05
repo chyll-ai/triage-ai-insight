@@ -25,7 +25,14 @@ serve(async (req) => {
       hasImage: !!image 
     });
 
-    // No authentication required for the new MedGemma endpoints
+    // Get the Google Cloud token from environment variables
+    const authToken = Deno.env.get('GOOGLE_CLOUD_TOKEN');
+    console.log('Auth token check:', { hasToken: !!authToken, tokenLength: authToken?.length || 0 });
+    
+    if (!authToken) {
+      console.error('Google Cloud token not configured');
+      throw new Error('Google Cloud token not configured');
+    }
 
     const patientData = `
 Patient Information:
@@ -48,16 +55,12 @@ ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
     console.log('Patient data prepared, length:', patientData.length);
 
     const request = {
-      instances: [
+      contents: [
         {
-          "@requestFormat": "anthropic_messages",
-          messages: [
+          role: "user",
+          parts: [
             {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: `You are an expert ER triage assistant. Analyze the following patient data and return a JSON response with the exact format:
+              text: `You are an expert ER triage assistant. Analyze the following patient data and return a JSON response with the exact format:
 {
   "summary": "Concise clinical summary of the findings",
   "urgency_level": "low | moderate | high | critical",
@@ -75,63 +78,64 @@ Rules:
 - If stable vitals + superficial lesion → flag as low
 
 Return only valid JSON:`
-                }
-              ]
             }
-          ],
-          max_tokens: 1000
+          ]
         }
-      ]
+      ],
+      generationConfig: {
+        maxOutputTokens: 1000,
+        temperature: 0.1,
+        responseMimeType: "application/json"
+      }
     };
 
-    console.log('Making request to MedGemma 27B endpoint...');
+    console.log('Making request to Vertex AI...');
     console.log('Request payload:', JSON.stringify(request, null, 2));
+    console.log('Auth token length:', authToken?.length);
     
-    const response = await fetch('https://call-vertex-ai-ii7brcvvyq-ez.a.run.app/', {
+    const response = await fetch('https://us-central1-aiplatform.googleapis.com/v1/projects/223266628372/locations/us-central1/publishers/google/models/gemini-2.0-flash-001:generateContent', {
       method: 'POST',
       headers: {
+        'Authorization': `Bearer ${authToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(request),
     });
 
-    console.log('MedGemma 27B response status:', response.status);
-    console.log('MedGemma 27B response headers:', Object.fromEntries(response.headers.entries()));
+    console.log('Vertex AI response status:', response.status);
+    console.log('Vertex AI response headers:', Object.fromEntries(response.headers.entries()));
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('MedGemma 27B error:', response.status, errorText);
-      throw new Error(`MedGemma 27B request failed: ${response.status} ${response.statusText} - ${errorText}`);
+      console.error('Vertex AI error:', response.status, errorText);
+      throw new Error(`Vertex AI request failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    console.log('Parsing MedGemma 27B response...');
+    console.log('Parsing Vertex AI response...');
     const data = await response.json();
-    console.log('Full MedGemma 27B response:', JSON.stringify(data, null, 2));
+    console.log('Full Vertex AI response:', JSON.stringify(data, null, 2));
     
-    // Check if we have the expected structure from the new endpoint
-    let responseText;
-    if (data.predictions && Array.isArray(data.predictions) && data.predictions.length > 0) {
-      // Handle Vertex AI format
-      const prediction = data.predictions[0];
-      if (prediction.candidates && prediction.candidates.length > 0) {
-        responseText = prediction.candidates[0].content?.parts?.[0]?.text;
-      }
-    } else if (data.content && Array.isArray(data.content) && data.content.length > 0) {
-      // Handle direct Anthropic format
-      responseText = data.content[0]?.text;
-    } else if (typeof data === 'string') {
-      // Handle plain text response
-      responseText = data;
-    } else if (data.response) {
-      // Handle wrapped response
-      responseText = data.response;
+    // Check if we have the expected structure
+    if (!data.candidates || !Array.isArray(data.candidates) || data.candidates.length === 0) {
+      console.error('Unexpected response structure - no candidates array:', data);
+      throw new Error('Vertex AI returned unexpected response structure');
     }
     
+    const candidate = data.candidates[0];
+    console.log('First candidate:', JSON.stringify(candidate, null, 2));
+    
+    if (!candidate.content || !candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
+      console.error('No content parts in candidate:', candidate);
+      throw new Error('Vertex AI returned no content parts');
+    }
+    
+    // Extract the response text and parse the JSON
+    const responseText = candidate.content.parts[0]?.text;
     console.log('Extracted response text:', responseText);
     
     if (!responseText) {
-      console.error('No response text found in:', data);
-      throw new Error('No response text from MedGemma 27B');
+      console.error('No text found in content parts:', candidate.content.parts);
+      throw new Error('No response text from Vertex AI');
     }
 
     // Try to parse the JSON response
