@@ -55,39 +55,44 @@ ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
     console.log('Patient data prepared, length:', patientData.length);
 
     const request = {
-      instances: [
+      contents: [
         {
-          "@requestFormat": "chatCompletions",
-          messages: [
+          role: "user",
+          parts: [
             {
-              role: "system",
-              content: [
-                {
-                  type: "text",
-                  text: "🧠 System Prompt: ER Triage Assistant (MedGemma)\nYou are the AI backend for a hospital emergency room (ER) triage assistant.\nYou receive patient data including clinical notes, vital signs, and medical images (such as wounds, rashes, burns, or trauma).\nYou must analyze this information and return clear, medically relevant insights to help ER staff prioritize care.\n\nYour task is to generate a clinical triage summary for each case based on urgency, severity, and need for medical resources.\n\n🩺 You are expected to:\nSummarize the patient condition clearly and concisely.\n\nEstimate urgency level (low, moderate, high, or critical) based on symptoms, image findings, and vitals.\n\nIdentify clinical red flags, such as signs of sepsis, deep tissue damage, severe bleeding, or airway risk.\n\nRecommend appropriate actions (e.g., monitor, admit, escalate, isolate, order labs).\n\nRemain neutral and factual; avoid speculation or informal tone.\n\n🔍 Input Types:\nText notes: Clinical descriptions, chief complaint, medical history\n\nVitals: Heart rate, temperature, oxygen saturation, blood pressure, GCS\n\nImage (optional): A wound, lesion, burn, rash, or trauma image\n\n🧾 Output Format:\nReturn a structured JSON response with the following fields:\n\n{\n  \"summary\": \"Concise clinical summary of the findings\",\n  \"urgency_level\": \"low | moderate | high | critical\",\n  \"red_flags\": [\"list of any critical findings or signs\"],\n  \"recommended_actions\": [\"list of next steps such as 'admit to ER', 'monitor vitals', 'request blood culture'\"]\n}\n\n⚠️ Special Handling Rules:\nIf signs of infection + fever + low oxygen → suggest sepsis evaluation.\n\nIf burns cover large area or involve blisters/necrosis → flag as critical.\n\nIf GCS < 13 or active bleeding → flag as high or critical.\n\nIf stable vitals + superficial lesion → flag as low."
-                }
-              ]
-            },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: patientData
-                }
-              ]
+              text: `You are an expert ER triage assistant. Analyze the following patient data and return a JSON response with the exact format:
+{
+  "summary": "Concise clinical summary of the findings",
+  "urgency_level": "low | moderate | high | critical",
+  "red_flags": ["list of any critical findings or signs"],
+  "recommended_actions": ["list of next steps such as 'admit to ER', 'monitor vitals', 'request blood culture'"]
+}
+
+Patient Data:
+${patientData}
+
+Rules:
+- If signs of infection + fever + low oxygen → suggest sepsis evaluation
+- If burns cover large area or involve blisters/necrosis → flag as critical
+- If GCS < 13 or active bleeding → flag as high or critical
+- If stable vitals + superficial lesion → flag as low
+
+Return only valid JSON:`
             }
-          ],
-          max_tokens: 500
+          ]
         }
-      ]
+      ],
+      generationConfig: {
+        maxOutputTokens: 500,
+        temperature: 0.1
+      }
     };
 
     console.log('Making request to Vertex AI...');
     console.log('Request payload:', JSON.stringify(request, null, 2));
     console.log('Auth token length:', authToken?.length);
     
-    const response = await fetch('https://8876697120128630784.us-central1-223266628372.prediction.vertexai.goog/v1/projects/223266628372/locations/us-central1/endpoints/8876697120128630784:predict', {
+    const response = await fetch('https://us-central1-aiplatform.googleapis.com/v1/projects/223266628372/locations/us-central1/publishers/google/models/gemini-2.0-flash-001:generateContent', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${authToken}`,
@@ -110,20 +115,12 @@ ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
     console.log('Full Vertex AI response:', JSON.stringify(data, null, 2));
     
     // Check if we have the expected structure
-    if (!data.predictions || !Array.isArray(data.predictions) || data.predictions.length === 0) {
-      console.error('Unexpected response structure - no predictions array:', data);
+    if (!data.candidates || !Array.isArray(data.candidates) || data.candidates.length === 0) {
+      console.error('Unexpected response structure - no candidates array:', data);
       throw new Error('Vertex AI returned unexpected response structure');
     }
     
-    const prediction = data.predictions[0];
-    console.log('First prediction:', JSON.stringify(prediction, null, 2));
-    
-    if (!prediction.candidates || !Array.isArray(prediction.candidates) || prediction.candidates.length === 0) {
-      console.error('No candidates in prediction:', prediction);
-      throw new Error('Vertex AI returned no candidates');
-    }
-    
-    const candidate = prediction.candidates[0];
+    const candidate = data.candidates[0];
     console.log('First candidate:', JSON.stringify(candidate, null, 2));
     
     if (!candidate.content || !candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
