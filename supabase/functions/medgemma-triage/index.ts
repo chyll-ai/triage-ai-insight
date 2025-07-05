@@ -84,7 +84,7 @@ Return only valid JSON:`
     console.log('Making request to MedGemma 27B endpoint...');
     console.log('Request payload:', JSON.stringify(request, null, 2));
     
-    const response = await fetch('https://us-central1-gemma-hcls25par-714.cloudfunctions.net/call-vertex-ai-27b', {
+    const response = await fetch('https://call-vertex-ai-ii7brcvvyq-ez.a.run.app/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
