@@ -84,6 +84,9 @@ ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
     };
 
     console.log('Making request to Vertex AI...');
+    console.log('Request payload:', JSON.stringify(request, null, 2));
+    console.log('Auth token length:', authToken?.length);
+    
     const response = await fetch('https://8876697120128630784.us-central1-223266628372.prediction.vertexai.goog/v1/projects/223266628372/locations/us-central1/endpoints/8876697120128630784:predict', {
       method: 'POST',
       headers: {
@@ -94,6 +97,7 @@ ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
     });
 
     console.log('Vertex AI response status:', response.status);
+    console.log('Vertex AI response headers:', Object.fromEntries(response.headers.entries()));
 
     if (!response.ok) {
       const errorText = await response.text();
