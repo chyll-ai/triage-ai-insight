@@ -1,38 +1,49 @@
 # Medical Triage AI System
 
-An advanced AI-powered medical triage system with patient management, priority ranking, and intelligent doctor matching capabilities.
+An advanced AI-powered medical triage system with comprehensive patient classification, priority ranking, and intelligent doctor matching capabilities. The system uses MedGemma AI models for accurate medical analysis and decision support.
 
 ## Features
 
 ### 🏥 Medical Triage Analysis
 - Upload patient information and medical images for instant AI analysis
-- Get triage urgency levels (High, Medium, Low) and suggested actions
-- Powered by MedGemma AI for accurate medical image analysis
+- Get triage urgency levels (Critical, High, Moderate, Low) with detailed reasoning
+- Powered by MedGemma AI (27B model) for accurate medical assessment
+- Real-time red flag detection and recommended actions
+- Comprehensive vital signs analysis and risk assessment
 
 ### 👥 Patient Management System
-- **Patient Ranking**: Intelligent priority ranking based on medical urgency
-- **Doctor Matching**: Smart matching of patients with appropriate doctors
-- **Mortality Prediction**: AI-powered mortality risk assessment using Vertex AI
+- **Patient Ranking**: Intelligent priority ranking based on medical urgency and multiple criteria
+- **Doctor Matching**: Smart matching of patients with appropriate specialists using AI
+- **Mortality Prediction**: AI-powered mortality risk assessment using MedGemma (4B model)
 - **Real-time Management**: Add, remove, and manage multiple patients and doctors
+- **Specialist Assignment**: Automatic detection of specialist requirements (cardiac, pediatric, trauma, surgical)
 
 ### 🔗 Backend Integration
-The system integrates with multiple AI endpoints:
+The system integrates with multiple AI endpoints and Supabase Edge Functions:
 
-#### Patient Ranking Endpoint
+#### MedGemma Triage Analysis (27B Model)
+- **Endpoint**: `https://call-vertex-ai-ii7brcvvyq-ez.a.run.app/`
+- Analyzes patient data and vital signs for triage assessment
+- Returns urgency level, red flags, and recommended actions
+- No authentication required
+
+#### Mortality Prediction (4B Model)
+- **Endpoint**: `https://us-central1-gemma-hcls25par-714.cloudfunctions.net/call-vertex-ai-4b`
+- Predicts mortality risk percentage for patients
+- Uses lightweight 4B model for fast predictions
+- No authentication required
+
+#### Patient Ranking (Supabase Edge Function)
 - **POST** `/rank_patients`
-- Ranks patients by priority based on medical conditions
+- Ranks patients by priority using comprehensive scoring algorithm
+- Considers triage level, severity score, age, wait time, and specialist needs
 - Returns ordered list with priority scores
 
-#### Doctor Matching Endpoint  
+#### Doctor Matching (Supabase Edge Function)
 - **POST** `/match_doctors`
-- Matches patients with appropriate doctors
-- Uses round-robin logic for optimal distribution
+- Matches patients with appropriate specialists using AI scoring
+- Considers specialty requirements, experience, workload, and age-specific needs
 - Provides justification and matching scores
-
-#### Mortality Prediction (Vertex AI)
-- **Endpoint**: Google Vertex AI
-- Predicts mortality risk percentage for ICU patients
-- Uses advanced AI models for accurate risk assessment
 
 ## Technology Stack
 
@@ -40,7 +51,83 @@ The system integrates with multiple AI endpoints:
 - **UI Components**: shadcn/ui, Tailwind CSS
 - **Routing**: React Router DOM
 - **State Management**: React Query
-- **AI Integration**: Vertex AI, Custom API endpoints
+- **AI Integration**: MedGemma AI (27B & 4B models), Supabase Edge Functions
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth
+- **Deployment**: Supabase Functions, Vercel/Netlify
+
+## 🏥 Patient Classification System
+
+### Triage Urgency Levels
+The system classifies patients into 4 urgency levels:
+
+- **Critical** - Immediate life-threatening conditions requiring immediate intervention
+- **High** - Serious conditions requiring prompt attention within 10-15 minutes
+- **Moderate** - Stable conditions needing medical attention within 30-60 minutes
+- **Low** - Minor conditions that can wait for routine care
+
+### AI Triage Analysis Rules
+The MedGemma AI uses evidence-based clinical rules:
+
+```typescript
+Clinical Rules:
+- If signs of infection + fever + low oxygen → suggest sepsis evaluation
+- If burns cover large area or involve blisters/necrosis → flag as critical
+- If GCS < 13 or active bleeding → flag as high or critical
+- If stable vitals + superficial lesion → flag as low
+```
+
+### Patient Priority Scoring Algorithm
+Patients are ranked using a comprehensive scoring system:
+
+```typescript
+Priority Score = 
+  (6 - triage_level) × 30 +           // Triage level weight
+  severity_score × 10 +               // Severity score weight
+  immediate_attention_bonus +         // 50 points if immediate attention needed
+  age_factor +                        // 15 points for pediatric/elderly
+  wait_time_factor                    // Up to 20 points for waiting time
+```
+
+### Database Classification Fields
+
+#### Core Classification
+- **`triage_level`** (1-5): 1 = highest priority, 5 = lowest
+- **`severity_score`** (1-10): Higher score = more severe condition
+- **`requires_immediate_attention`** (boolean): Critical flag for urgent cases
+- **`condition_category`**: cardiac, respiratory, trauma, neurological, pediatric, surgical, psychiatric, infectious, other
+
+#### Specialist Requirements
+- **`requires_cardiac_specialist`** (boolean): Heart-related conditions
+- **`requires_pediatric_care`** (boolean): Patients under 18 years
+- **`requires_trauma_specialist`** (boolean): Trauma/injury cases
+- **`requires_surgery`** (boolean): Surgical intervention needed
+- **`requires_specialist`** (boolean): General specialist consultation
+
+#### Vital Signs Thresholds
+- **Heart Rate**: 0-300 bpm
+- **Blood Pressure**: Systolic 0-300, Diastolic 0-200 mmHg
+- **Temperature**: 30-50°C
+- **Oxygen Saturation**: 50-100%
+- **Glasgow Coma Scale**: 3-15
+
+### Doctor Matching Criteria
+The system matches patients to doctors using a sophisticated scoring algorithm:
+
+```typescript
+Matching Score =
+  specialty_match_bonus +             // 40 points for exact specialty match
+  experience_factor +                 // Years of experience for complex cases
+  emergency_rating_bonus +            // Emergency response rating for urgent cases
+  workload_balance_factor +           // Prefer doctors with lower current load
+  age_specific_care_bonus            // Pediatric/geriatric expertise
+```
+
+### Visual Classification Indicators
+The UI uses color-coded badges for quick identification:
+- **🔴 Red (destructive)**: Critical/High urgency, Severity 8-10, Triage Level 1
+- **🔵 Blue (default)**: Moderate urgency, Severity 6-7, Triage Level 2
+- **⚪ Gray (secondary)**: Low urgency, Severity 1-5, Triage Level 3-5
 
 ## Getting Started
 
@@ -130,29 +217,51 @@ Response:
 }
 ```
 
-### Mortality Prediction (Vertex AI)
+### MedGemma Triage Analysis
 ```json
-POST https://vertex-ai-endpoint
+POST https://call-vertex-ai-ii7brcvvyq-ez.a.run.app/
 {
-  "instances": [{
-    "@requestFormat": "chatCompletions",
-    "messages": [
-      {
-        "role": "system",
-        "content": [{"type": "text", "text": "You are an expert system..."}]
-      },
-      {
-        "role": "user", 
-        "content": [{"type": "text", "text": "Patient description..."}]
-      }
-    ],
-    "max_tokens": 200
-  }]
+  "contents": [{
+    "role": "user",
+    "parts": [{
+      "text": "Patient data and clinical rules..."
+    }]
+  }],
+  "generationConfig": {
+    "maxOutputTokens": 1000,
+    "temperature": 0.1,
+    "responseMimeType": "application/json"
+  }
 }
 
 Response:
 {
-  "pourcentage": 75
+  "summary": "Clinical summary of findings",
+  "urgency_level": "critical|high|moderate|low",
+  "red_flags": ["list of critical findings"],
+  "recommended_actions": ["list of next steps"]
+}
+```
+
+### Mortality Prediction (MedGemma 4B)
+```json
+POST https://us-central1-gemma-hcls25par-714.cloudfunctions.net/call-vertex-ai-4b
+{
+  "contents": [{
+    "role": "user",
+    "parts": [{
+      "text": "Patient description for mortality assessment..."
+    }]
+  }],
+  "generationConfig": {
+    "maxOutputTokens": 200,
+    "temperature": 0.1
+  }
+}
+
+Response:
+{
+  "percentage": 75
 }
 ```
 
@@ -183,11 +292,42 @@ src/
     └── use-toast.ts             # Toast notifications
 ```
 
+## Deployment & Configuration
+
+### Supabase Setup
+1. Create a new Supabase project
+2. Run database migrations:
+   ```bash
+   supabase db push
+   ```
+3. Deploy Edge Functions:
+   ```bash
+   supabase functions deploy medgemma-triage
+   supabase functions deploy mortality-prediction
+   supabase functions deploy rank-patients
+   supabase functions deploy match-doctors
+   ```
+
+### Environment Variables
+Create a `.env.local` file with your Supabase credentials:
+```env
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+### AI Endpoints Configuration
+The system uses pre-configured MedGemma endpoints:
+- **Triage Analysis**: `https://call-vertex-ai-ii7brcvvyq-ez.a.run.app/` (27B model)
+- **Mortality Prediction**: `https://us-central1-gemma-hcls25par-714.cloudfunctions.net/call-vertex-ai-4b` (4B model)
+
+No additional authentication is required for these endpoints.
+
 ## Development
 
 ### Available Scripts
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
+- `npm run build:dev` - Build for development
 - `npm run preview` - Preview production build
 - `npm run lint` - Run ESLint
 
@@ -197,6 +337,15 @@ src/
 3. Update routing in `src/App.tsx`
 4. Add TypeScript interfaces in `src/types/`
 5. Implement API calls in `src/lib/api.ts`
+6. Add database migrations in `supabase/migrations/`
+
+### Database Schema
+The system uses a comprehensive patient management schema with:
+- **Patients table**: Core patient data, vitals, classification fields
+- **Doctors table**: Doctor information, specialties, availability
+- **Medical Specialties table**: Available medical specialties
+- **Patient Assignments table**: Historical patient-doctor assignments
+- **Matching Criteria Weights table**: Configurable matching algorithm weights
 
 ## Contributing
 
