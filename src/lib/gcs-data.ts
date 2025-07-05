@@ -28,49 +28,61 @@ const GCS_BASE_URL = 'https://storage.googleapis.com/josianne-asset-bucket';
 
 export async function fetchPatientsFromGCS(): Promise<GCSPatient[]> {
   try {
+    console.log('Fetching patients from GCS...');
     const { data, error } = await supabase.functions.invoke('fetch-gcs-data', {
       body: { dataType: 'patients' }
     });
 
     if (error) {
       console.error('Supabase function error:', error);
-      throw new Error(`Failed to fetch patients: ${error.message}`);
+      return []; // Return empty array instead of throwing
     }
 
-    // Handle the new response format
+    // Handle the new response format safely
     if (data && typeof data === 'object' && data.status === 'warning') {
       console.warn('Warning from GCS function:', data.error);
-      return data.data || [];
+      return Array.isArray(data.data) ? data.data : [];
     }
     
-    return Array.isArray(data) ? data : (data ? [data] : []);
+    if (Array.isArray(data)) {
+      console.log(`Successfully fetched ${data.length} patients`);
+      return data;
+    }
+    
+    return data ? [data] : [];
   } catch (error) {
     console.error('Error fetching patients from GCS:', error);
-    throw error;
+    return []; // Return empty array instead of throwing
   }
 }
 
 export async function fetchDoctorsFromGCS(): Promise<GCSDoctor[]> {
   try {
+    console.log('Fetching doctors from GCS...');
     const { data, error } = await supabase.functions.invoke('fetch-gcs-data', {
       body: { dataType: 'doctors' }
     });
 
     if (error) {
       console.error('Supabase function error:', error);
-      throw new Error(`Failed to fetch doctors: ${error.message}`);
+      return []; // Return empty array instead of throwing
     }
 
-    // Handle the new response format
+    // Handle the new response format safely
     if (data && typeof data === 'object' && data.status === 'warning') {
       console.warn('Warning from GCS function:', data.error);
-      return data.data || [];
+      return Array.isArray(data.data) ? data.data : [];
     }
     
-    return Array.isArray(data) ? data : (data ? [data] : []);
+    if (Array.isArray(data)) {
+      console.log(`Successfully fetched ${data.length} doctors`);
+      return data;
+    }
+    
+    return data ? [data] : [];
   } catch (error) {
     console.error('Error fetching doctors from GCS:', error);
-    throw error;
+    return []; // Return empty array instead of throwing
   }
 }
 

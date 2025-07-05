@@ -251,6 +251,16 @@ export function PatientManagement() {
 
     try {
       const gcsPatients = await fetchPatientsFromGCS();
+      
+      if (gcsPatients.length === 0) {
+        toast({
+          title: "No Patients Found",
+          description: "No patient files were found in GCS. Check the file naming pattern.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       const formattedPatients: Patient[] = gcsPatients.map(gcsPatient => ({
         id: gcsPatient.id,
         name: gcsPatient.name,
@@ -287,6 +297,16 @@ export function PatientManagement() {
 
     try {
       const gcsDoctors = await fetchDoctorsFromGCS();
+      
+      if (gcsDoctors.length === 0) {
+        toast({
+          title: "No Doctors Found",
+          description: "No doctor files were found in GCS. Check the file naming pattern.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       const formattedDoctors: Doctor[] = gcsDoctors.map(gcsDoctor => ({
         id: gcsDoctor.id,
         name: gcsDoctor.name,
