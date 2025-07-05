@@ -1,9 +1,42 @@
-export interface PatientInfo {
+// Pre-filled patient data from DMP/medical records system
+export interface PrefilledPatientData {
+  // Demographics (read-only from DMP)
   fullName: string;
   age: number;
   sex: 'Male' | 'Female' | 'Other';
-  chiefComplaint: string;
+  patientId: string;
+  address?: string;
+  phone?: string;
+  emergencyContact?: {
+    name: string;
+    phone: string;
+    relationship: string;
+  };
+  
+  // Medical history (read-only from DMP)
+  medicalHistory: string[];
+  currentMedications: string[];
+  knownAllergies: string[];
+  chronicConditions: string[];
+  previousDiagnoses: string[];
+  lastVisitDate?: string;
+  insuranceInfo?: {
+    provider: string;
+    number: string;
+  };
 }
+
+// Current visit data (editable by clinician)
+export interface CurrentVisitData {
+  chiefComplaint: string;
+  currentSymptoms: string;
+  clinicalNotes: string;
+  onsetDate?: string;
+  symptomDuration?: string;
+}
+
+// Combined patient info for triage
+export interface PatientInfo extends PrefilledPatientData, CurrentVisitData {}
 
 export interface Vitals {
   heartRate: number;

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { PatientInfo, Vitals } from "@/types/triage";
 import { PatientForm } from "@/components/PatientForm";
+import { PatientSummary } from "@/components/PatientSummary";
 import { VitalsForm } from "@/components/VitalsForm";
 import { ImageUpload } from "@/components/ImageUpload";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
@@ -22,11 +23,44 @@ interface TriageResults {
 export default function Triage() {
   const { toast } = useToast();
   
+  // Sample pre-filled patient data (from DMP integration)
   const [patientInfo, setPatientInfo] = useState<PatientInfo>({
-    fullName: "",
-    age: 0,
-    sex: "Male",
-    chiefComplaint: ""
+    // Pre-filled data from DMP (read-only)
+    fullName: "Marie Dubois",
+    age: 67,
+    sex: "Female",
+    patientId: "DMP123456789",
+    address: "15 rue de la République, 75011 Paris",
+    phone: "01 42 85 67 93",
+    emergencyContact: {
+      name: "Jean Dubois",
+      phone: "06 12 34 56 78",
+      relationship: "Époux"
+    },
+    medicalHistory: [
+      "Hypertension artérielle (2018)", 
+      "Diabète type 2 (2020)",
+      "Chirurgie de la cataracte OD (2022)"
+    ],
+    currentMedications: [
+      "Metformine 850mg 2x/jour",
+      "Lisinopril 10mg 1x/jour",
+      "Aspirine 75mg 1x/jour"
+    ],
+    knownAllergies: ["Pénicilline", "Contraste iodé"],
+    chronicConditions: ["Hypertension", "Diabète type 2"],
+    previousDiagnoses: ["Cataracte", "Presbytie"],
+    lastVisitDate: "2024-06-15",
+    insuranceInfo: {
+      provider: "CPAM Paris",
+      number: "1 67 05 75011 123 45"
+    },
+    // Current visit data (editable)
+    chiefComplaint: "",
+    currentSymptoms: "",
+    clinicalNotes: "",
+    onsetDate: "",
+    symptomDuration: ""
   });
 
   const [vitals, setVitals] = useState<Vitals>({
@@ -43,28 +77,19 @@ export default function Triage() {
   const [error, setError] = useState<string>("");
 
   const validateForm = (): boolean => {
-    if (!patientInfo.fullName.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Patient name is required",
-        variant: "destructive"
-      });
-      return false;
-    }
-
-    if (!patientInfo.age || patientInfo.age <= 0) {
-      toast({
-        title: "Validation Error", 
-        description: "Valid patient age is required",
-        variant: "destructive"
-      });
-      return false;
-    }
-
     if (!patientInfo.chiefComplaint.trim()) {
       toast({
         title: "Validation Error",
-        description: "Chief complaint is required",
+        description: "Le motif de consultation est requis",
+        variant: "destructive"
+      });
+      return false;
+    }
+
+    if (!patientInfo.currentSymptoms.trim()) {
+      toast({
+        title: "Validation Error", 
+        description: "La description des symptômes actuels est requise",
         variant: "destructive"
       });
       return false;
@@ -84,7 +109,7 @@ export default function Triage() {
       const analysisResults = await performTriageAnalysis(
         patientInfo,
         vitals,
-        patientInfo.chiefComplaint,
+        `${patientInfo.chiefComplaint} - Symptômes: ${patientInfo.currentSymptoms} - Notes: ${patientInfo.clinicalNotes}`,
         image
       );
       
@@ -110,12 +135,15 @@ export default function Triage() {
   };
 
   const handleReset = () => {
-    setPatientInfo({
-      fullName: "",
-      age: 0,
-      sex: "Male",
-      chiefComplaint: ""
-    });
+    // Reset only the current visit data, keep pre-filled DMP data
+    setPatientInfo(prev => ({
+      ...prev,
+      chiefComplaint: "",
+      currentSymptoms: "",
+      clinicalNotes: "",
+      onsetDate: "",
+      symptomDuration: ""
+    }));
     setVitals({
       heartRate: 0,
       bloodPressure: "",
@@ -231,6 +259,9 @@ export default function Triage() {
         {/* Form - Only show if no results */}
         {!results && !isLoading && (
           <div className="space-y-6">
+            {/* Patient Summary from DMP */}
+            <PatientSummary patientInfo={patientInfo} />
+            
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <PatientForm 
                 patientInfo={patientInfo}
