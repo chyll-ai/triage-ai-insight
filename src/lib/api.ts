@@ -6,44 +6,42 @@ import {
 } from '@/types/triage';
 import { supabase } from '@/integrations/supabase/client';
 
-// Backend API endpoints (keeping for patient ranking and doctor matching)
-const BACKEND_BASE_URL = 'https://8876697120128630784.us-central1-223266628372.prediction.vertexai.goog/v1/projects/223266628372/locations/us-central1/endpoints/8876697120128630784';
-
-// Generic API call function
-async function apiCall<T>(url: string, options: RequestInit): Promise<T> {
+// Rank patients endpoint via Supabase Edge Function
+export async function rankPatients(request: RankPatientsRequest): Promise<RankPatientsResponse> {
   try {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+    const { data, error } = await supabase.functions.invoke('rank-patients', {
+      body: request
     });
 
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    if (error) {
+      console.error('Supabase function error:', error);
+      throw new Error(`Rank patients failed: ${error.message}`);
     }
 
-    return await response.json();
+    return data;
   } catch (error) {
-    throw new Error(`API call failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('Rank patients error:', error);
+    throw new Error(`Rank patients failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
-// Rank patients endpoint
-export async function rankPatients(request: RankPatientsRequest): Promise<RankPatientsResponse> {
-  return apiCall<RankPatientsResponse>(`${BACKEND_BASE_URL}/rank_patients`, {
-    method: 'POST',
-    body: JSON.stringify(request),
-  });
-}
-
-// Match doctors endpoint
+// Match doctors endpoint via Supabase Edge Function
 export async function matchDoctors(request: MatchDoctorsRequest): Promise<MatchDoctorsResponse> {
-  return apiCall<MatchDoctorsResponse>(`${BACKEND_BASE_URL}/match_doctors`, {
-    method: 'POST',
-    body: JSON.stringify(request),
-  });
+  try {
+    const { data, error } = await supabase.functions.invoke('match-doctors', {
+      body: request
+    });
+
+    if (error) {
+      console.error('Supabase function error:', error);
+      throw new Error(`Match doctors failed: ${error.message}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Match doctors error:', error);
+    throw new Error(`Match doctors failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 // Vertex AI endpoint for triage analysis via Supabase Edge Function
