@@ -93,7 +93,7 @@ Return only valid JSON:`
     console.log('Request payload:', JSON.stringify(request, null, 2));
     console.log('Auth token length:', authToken?.length);
     
-    const response = await fetch('https://us-central1-aiplatform.googleapis.com/v1/projects/223266628372/locations/us-central1/publishers/google/models/gemini-2.0-flash-001:generateContent', {
+    const response = await fetch('https://call-vertex-ai-ii7brcvvyq-ez.a.run.app/', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${authToken}`,
