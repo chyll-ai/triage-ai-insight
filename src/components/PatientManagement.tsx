@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   Users, 
   UserCheck, 
@@ -14,49 +15,41 @@ import {
   Stethoscope,
   Plus,
   Trash2,
-  Download,
-  Image
+  RefreshCw,
+  Activity,
+  Clock,
+  Heart,
+  Thermometer
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { rankPatients, matchDoctors, predictMortality } from "@/lib/api";
 import { RankedPatient, DoctorMatch } from "@/types/triage";
-import { fetchPatientsFromGCS, fetchDoctorsFromGCS, getTraumaImageUrl } from "@/lib/gcs-data";
-
-interface Patient {
-  id: string;
-  name: string;
-  age: number;
-  condition: string;
-  mortalityRisk?: number;
-  medicalHistory?: string[];
-  severity?: number;
-  imageIds?: string[];
-}
-
-interface Doctor {
-  id: string;
-  name: string;
-  specialty: string;
-  availability?: boolean;
-  experience?: number;
-}
+import { 
+  Doctor as DbDoctor, 
+  Patient as DbPatient, 
+  MedicalSpecialty 
+} from "@/types/database";
+import { 
+  fetchPatients, 
+  fetchDoctors, 
+  fetchMedicalSpecialties,
+  addPatient as addDbPatient, 
+  addDoctor as addDbDoctor, 
+  deletePatient as deleteDbPatient, 
+  deleteDoctor as deleteDbDoctor,
+  updatePatient,
+  updateDoctor
+} from "@/lib/supabase-data";
 
 export function PatientManagement() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>("");
   
-  // Patient management
-  const [patients, setPatients] = useState<Patient[]>([
-    { id: "p_001", name: "John Doe", age: 45, condition: "Chest pain" },
-    { id: "p_002", name: "Jane Smith", age: 32, condition: "Fever and cough" },
-    { id: "p_003", name: "Bob Johnson", age: 67, condition: "Difficulty breathing" },
-  ]);
-  
-  const [doctors, setDoctors] = useState<Doctor[]>([
-    { id: "d_100", name: "Dr. Sarah Wilson", specialty: "Cardiology" },
-    { id: "d_200", name: "Dr. Michael Chen", specialty: "Emergency Medicine" },
-  ]);
+  // Patient and doctor data from Supabase
+  const [patients, setPatients] = useState<DbPatient[]>([]);
+  const [doctors, setDoctors] = useState<DbDoctor[]>([]);
+  const [specialties, setSpecialties] = useState<MedicalSpecialty[]>([]);
   
   // Results
   const [rankedPatients, setRankedPatients] = useState<RankedPatient[]>([]);
@@ -64,77 +57,202 @@ export function PatientManagement() {
   const [mortalityPredictions, setMortalityPredictions] = useState<Record<string, number>>({});
 
   // Form inputs
-  const [newPatient, setNewPatient] = useState({ name: "", age: "", condition: "" });
-  const [newDoctor, setNewDoctor] = useState({ name: "", specialty: "" });
+  const [newPatient, setNewPatient] = useState({ 
+    name: "", 
+    age: "", 
+    chief_complaint: "",
+    severity_score: "5",
+    triage_level: "3"
+  });
+  const [newDoctor, setNewDoctor] = useState({ 
+    name: "", 
+    employee_id: "",
+    primary_specialty_id: "",
+    years_experience: "5"
+  });
+
+  // Load initial data
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  const loadInitialData = async () => {
+    setIsLoading(true);
+    try {
+      const [patientsData, doctorsData, specialtiesData] = await Promise.all([
+        fetchPatients(),
+        fetchDoctors(), 
+        fetchMedicalSpecialties()
+      ]);
+      
+      setPatients(patientsData);
+      setDoctors(doctorsData);
+      setSpecialties(specialtiesData);
+      
+      toast({
+        title: "Data Loaded",
+        description: `Loaded ${patientsData.length} patients and ${doctorsData.length} doctors`,
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to load data";
+      setError(errorMessage);
+      toast({
+        title: "Loading Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Refresh data
+  const refreshData = () => {
+    loadInitialData();
+  };
 
   // Add new patient
-  const addPatient = () => {
-    if (!newPatient.name || !newPatient.age || !newPatient.condition) {
+  const addPatient = async () => {
+    if (!newPatient.name || !newPatient.age || !newPatient.chief_complaint) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all patient fields",
+        description: "Please fill in all required patient fields",
         variant: "destructive"
       });
       return;
     }
 
-    const patient: Patient = {
-      id: `p_${Date.now()}`,
-      name: newPatient.name,
-      age: parseInt(newPatient.age),
-      condition: newPatient.condition
-    };
+    setIsLoading(true);
+    try {
+      const patientData = {
+        patient_id: `PT_${Date.now()}`,
+        name: newPatient.name,
+        age: parseInt(newPatient.age),
+        chief_complaint: newPatient.chief_complaint,
+        severity_score: parseInt(newPatient.severity_score),
+        triage_level: parseInt(newPatient.triage_level),
+        arrival_time: new Date().toISOString(),
+        requires_immediate_attention: parseInt(newPatient.triage_level) <= 2,
+        requires_specialist: parseInt(newPatient.severity_score) >= 7,
+        preferred_language: 'English',
+        admission_status: 'waiting' as const,
+        complexity_score: parseInt(newPatient.severity_score),
+        requires_trauma_specialist: false,
+        requires_pediatric_care: parseInt(newPatient.age) < 18,
+        requires_cardiac_specialist: newPatient.chief_complaint.toLowerCase().includes('chest') || newPatient.chief_complaint.toLowerCase().includes('heart'),
+        requires_surgery: false
+      };
 
-    setPatients([...patients, patient]);
-    setNewPatient({ name: "", age: "", condition: "" });
-    
-    toast({
-      title: "Patient Added",
-      description: `${patient.name} has been added to the system`,
-    });
+      const patient = await addDbPatient(patientData);
+      setPatients([...patients, patient]);
+      setNewPatient({ name: "", age: "", chief_complaint: "", severity_score: "5", triage_level: "3" });
+      
+      toast({
+        title: "Patient Added",
+        description: `${patient.name} has been added to the system`,
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to add patient";
+      toast({
+        title: "Add Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Add new doctor
-  const addDoctor = () => {
-    if (!newDoctor.name || !newDoctor.specialty) {
+  const addDoctor = async () => {
+    if (!newDoctor.name || !newDoctor.employee_id || !newDoctor.primary_specialty_id || !newDoctor.years_experience) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all doctor fields",
+        description: "Please fill in all required doctor fields",
         variant: "destructive"
       });
       return;
     }
 
-    const doctor: Doctor = {
-      id: `d_${Date.now()}`,
-      name: newDoctor.name,
-      specialty: newDoctor.specialty
-    };
+    setIsLoading(true);
+    try {
+      const doctorData = {
+        employee_id: newDoctor.employee_id,
+        name: newDoctor.name,
+        primary_specialty_id: newDoctor.primary_specialty_id,
+        years_experience: parseInt(newDoctor.years_experience),
+        availability_status: 'available' as const,
+        current_patient_load: 0,
+        max_patient_capacity: 8,
+        trauma_experience_level: 3,
+        pediatric_qualified: false,
+        cardiac_specialist: false,
+        surgery_qualified: false
+      };
 
-    setDoctors([...doctors, doctor]);
-    setNewDoctor({ name: "", specialty: "" });
-    
-    toast({
-      title: "Doctor Added",
-      description: `${doctor.name} has been added to the system`,
-    });
+      const doctor = await addDbDoctor(doctorData);
+      setDoctors([...doctors, doctor]);
+      setNewDoctor({ name: "", employee_id: "", primary_specialty_id: "", years_experience: "5" });
+      
+      toast({
+        title: "Doctor Added",
+        description: `${doctor.name} has been added to the system`,
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to add doctor";
+      toast({
+        title: "Add Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Remove patient
-  const removePatient = (patientId: string) => {
-    setPatients(patients.filter(p => p.id !== patientId));
-    setRankedPatients(rankedPatients.filter(rp => rp.patient_id !== patientId));
-    setDoctorMatches(doctorMatches.filter(dm => dm.patient_id !== patientId));
-    
-    const newMortalityPredictions = { ...mortalityPredictions };
-    delete newMortalityPredictions[patientId];
-    setMortalityPredictions(newMortalityPredictions);
+  const removePatient = async (patientId: string) => {
+    try {
+      await deleteDbPatient(patientId);
+      setPatients(patients.filter(p => p.id !== patientId));
+      setRankedPatients(rankedPatients.filter(rp => rp.patient_id !== patientId));
+      setDoctorMatches(doctorMatches.filter(dm => dm.patient_id !== patientId));
+      
+      const newMortalityPredictions = { ...mortalityPredictions };
+      delete newMortalityPredictions[patientId];
+      setMortalityPredictions(newMortalityPredictions);
+      
+      toast({
+        title: "Patient Removed",
+        description: "Patient has been removed from the system",
+      });
+    } catch (err) {
+      toast({
+        title: "Remove Failed",
+        description: "Failed to remove patient",
+        variant: "destructive"
+      });
+    }
   };
 
   // Remove doctor
-  const removeDoctor = (doctorId: string) => {
-    setDoctors(doctors.filter(d => d.id !== doctorId));
-    setDoctorMatches(doctorMatches.filter(dm => dm.doctor_id !== doctorId));
+  const removeDoctor = async (doctorId: string) => {
+    try {
+      await deleteDbDoctor(doctorId);
+      setDoctors(doctors.filter(d => d.id !== doctorId));
+      setDoctorMatches(doctorMatches.filter(dm => dm.doctor_id !== doctorId));
+      
+      toast({
+        title: "Doctor Removed",
+        description: "Doctor has been removed from the system",
+      });
+    } catch (err) {
+      toast({
+        title: "Remove Failed",
+        description: "Failed to remove doctor",
+        variant: "destructive"
+      });
+    }
   };
 
   // Rank patients
@@ -213,12 +331,12 @@ export function PatientManagement() {
   };
 
   // Predict mortality for a patient
-  const predictPatientMortality = async (patient: Patient) => {
+  const predictPatientMortality = async (patient: DbPatient) => {
     setIsLoading(true);
     setError("");
 
     try {
-      const description = `patient_id: ${patient.id},\nfull_name: ${patient.name},\nage: ${patient.age},\nchief_complaint: ${patient.condition}`;
+      const description = `patient_id: ${patient.patient_id},\nfull_name: ${patient.name},\nage: ${patient.age},\nchief_complaint: ${patient.chief_complaint}`;
       const mortalityRisk = await predictMortality(description);
       
       setMortalityPredictions(prev => ({
@@ -244,100 +362,23 @@ export function PatientManagement() {
     }
   };
 
-  // Load data from GCS
-  const loadPatientsFromGCS = async () => {
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const gcsPatients = await fetchPatientsFromGCS();
-      
-      if (gcsPatients.length === 0) {
-        toast({
-          title: "No Patients Found",
-          description: "No patient files were found in GCS. Check the file naming pattern.",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      const formattedPatients: Patient[] = gcsPatients.map(gcsPatient => ({
-        id: gcsPatient.id,
-        name: gcsPatient.name,
-        age: gcsPatient.age,
-        condition: gcsPatient.condition,
-        medicalHistory: gcsPatient.medicalHistory,
-        severity: gcsPatient.severity,
-        imageIds: gcsPatient.imageIds
-      }));
-      
-      setPatients(formattedPatients);
-      
-      toast({
-        title: "Patients Loaded",
-        description: `Successfully loaded ${formattedPatients.length} patients from GCS`,
-      });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to load patients from GCS";
-      setError(errorMessage);
-      
-      toast({
-        title: "Loading Failed",
-        description: errorMessage,
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadDoctorsFromGCS = async () => {
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const gcsDoctors = await fetchDoctorsFromGCS();
-      
-      if (gcsDoctors.length === 0) {
-        toast({
-          title: "No Doctors Found",
-          description: "No doctor files were found in GCS. Check the file naming pattern.",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      const formattedDoctors: Doctor[] = gcsDoctors.map(gcsDoctor => ({
-        id: gcsDoctor.id,
-        name: gcsDoctor.name,
-        specialty: gcsDoctor.specialty,
-        availability: gcsDoctor.availability,
-        experience: gcsDoctor.experience
-      }));
-      
-      setDoctors(formattedDoctors);
-      
-      toast({
-        title: "Doctors Loaded",
-        description: `Successfully loaded ${formattedDoctors.length} doctors from GCS`,
-      });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to load doctors from GCS";
-      setError(errorMessage);
-      
-      toast({
-        title: "Loading Failed",
-        description: errorMessage,
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   // Get patient by ID
   const getPatientById = (id: string) => patients.find(p => p.id === id);
   const getDoctorById = (id: string) => doctors.find(d => d.id === id);
+
+  // Get severity badge color
+  const getSeverityBadgeVariant = (score: number) => {
+    if (score >= 8) return "destructive";
+    if (score >= 6) return "default"; 
+    return "secondary";
+  };
+
+  // Get triage badge color
+  const getTriageBadgeVariant = (level: number) => {
+    if (level === 1) return "destructive";
+    if (level === 2) return "default";
+    return "secondary";
+  };
 
   return (
     <div className="space-y-6">
@@ -345,10 +386,10 @@ export function PatientManagement() {
       <div className="text-center">
         <h2 className="text-2xl font-bold text-primary flex items-center justify-center gap-2">
           <Users className="w-6 h-6" />
-          Patient Management System
+          Advanced Patient Management System
         </h2>
         <p className="text-muted-foreground mt-2">
-          Manage patients, rank by priority, and match with doctors using AI
+          Comprehensive patient data management with AI-powered matching and prioritization
         </p>
       </div>
 
@@ -359,6 +400,18 @@ export function PatientManagement() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+
+      {/* Refresh Button */}
+      <div className="flex justify-center">
+        <Button onClick={refreshData} disabled={isLoading} variant="outline">
+          {isLoading ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="w-4 h-4 mr-2" />
+          )}
+          Refresh Data
+        </Button>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Patients Section */}
@@ -372,25 +425,10 @@ export function PatientManagement() {
           <CardContent className="space-y-4">
             {/* Add Patient Form */}
             <div className="space-y-3 p-4 border rounded-lg">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium">Add New Patient</h4>
-                <Button
-                  onClick={loadPatientsFromGCS}
-                  disabled={isLoading}
-                  size="sm"
-                  variant="outline"
-                >
-                  {isLoading ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4 mr-2" />
-                  )}
-                  Load from GCS
-                </Button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <h4 className="font-medium">Add New Patient</h4>
+              <div className="grid grid-cols-2 gap-2">
                 <Input
-                  placeholder="Name"
+                  placeholder="Patient Name"
                   value={newPatient.name}
                   onChange={(e) => setNewPatient(prev => ({ ...prev, name: e.target.value }))}
                 />
@@ -400,42 +438,82 @@ export function PatientManagement() {
                   value={newPatient.age}
                   onChange={(e) => setNewPatient(prev => ({ ...prev, age: e.target.value }))}
                 />
-                <Input
-                  placeholder="Condition"
-                  value={newPatient.condition}
-                  onChange={(e) => setNewPatient(prev => ({ ...prev, condition: e.target.value }))}
-                />
               </div>
-              <Button onClick={addPatient} size="sm" className="w-full">
+              <Input
+                placeholder="Chief Complaint"
+                value={newPatient.chief_complaint}
+                onChange={(e) => setNewPatient(prev => ({ ...prev, chief_complaint: e.target.value }))}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-sm">Severity Score (1-10)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={newPatient.severity_score}
+                    onChange={(e) => setNewPatient(prev => ({ ...prev, severity_score: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm">Triage Level (1-5)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="5"
+                    value={newPatient.triage_level}
+                    onChange={(e) => setNewPatient(prev => ({ ...prev, triage_level: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <Button onClick={addPatient} size="sm" className="w-full" disabled={isLoading}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Patient
               </Button>
             </div>
 
             {/* Patient List */}
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-96 overflow-y-auto">
               {patients.map((patient) => (
-                <div key={patient.id} className="p-3 border rounded-lg space-y-3">
+                <div key={patient.id} className="p-3 border rounded-lg space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium">{patient.name}</span>
                         <Badge variant="outline">{patient.age} years</Badge>
-                        {patient.severity && (
-                          <Badge variant="secondary">Severity: {patient.severity}</Badge>
-                        )}
+                        <Badge variant={getSeverityBadgeVariant(patient.severity_score)}>
+                          Severity: {patient.severity_score}
+                        </Badge>
+                        <Badge variant={getTriageBadgeVariant(patient.triage_level)}>
+                          Triage: {patient.triage_level}
+                        </Badge>
                         {mortalityPredictions[patient.id] && (
                           <Badge variant="destructive">
                             {mortalityPredictions[patient.id]}% mortality risk
                           </Badge>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground">{patient.condition}</p>
-                      {patient.medicalHistory && patient.medicalHistory.length > 0 && (
-                        <p className="text-sm text-muted-foreground">
-                          <strong>History:</strong> {patient.medicalHistory.join(", ")}
-                        </p>
-                      )}
+                      <p className="text-sm text-muted-foreground">{patient.chief_complaint}</p>
+                      <div className="flex items-center gap-4 mt-1">
+                        {patient.heart_rate && (
+                          <div className="flex items-center gap-1">
+                            <Heart className="w-3 h-3" />
+                            <span className="text-xs">{patient.heart_rate} bpm</span>
+                          </div>
+                        )}
+                        {patient.temperature_celsius && (
+                          <div className="flex items-center gap-1">
+                            <Thermometer className="w-3 h-3" />
+                            <span className="text-xs">{patient.temperature_celsius}°C</span>
+                          </div>
+                        )}
+                        {patient.oxygen_saturation && (
+                          <div className="flex items-center gap-1">
+                            <Activity className="w-3 h-3" />
+                            <span className="text-xs">{patient.oxygen_saturation}% O2</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-1">
                       <Button
@@ -455,30 +533,6 @@ export function PatientManagement() {
                       </Button>
                     </div>
                   </div>
-                  
-                  {/* Medical Images */}
-                  {patient.imageIds && patient.imageIds.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Image className="w-4 h-4" />
-                        <span className="text-sm font-medium">Medical Images ({patient.imageIds.length})</span>
-                      </div>
-                      <div className="flex gap-2 overflow-x-auto">
-                        {patient.imageIds.map((imageId, index) => (
-                          <img
-                            key={index}
-                            src={getTraumaImageUrl(imageId)}
-                            alt={`Medical image ${index + 1} for ${patient.name}`}
-                            className="w-16 h-16 object-cover rounded border cursor-pointer hover:opacity-80"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = 'none';
-                            }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
@@ -496,47 +550,74 @@ export function PatientManagement() {
           <CardContent className="space-y-4">
             {/* Add Doctor Form */}
             <div className="space-y-3 p-4 border rounded-lg">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium">Add New Doctor</h4>
-                <Button
-                  onClick={loadDoctorsFromGCS}
-                  disabled={isLoading}
-                  size="sm"
-                  variant="outline"
-                >
-                  {isLoading ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4 mr-2" />
-                  )}
-                  Load from GCS
-                </Button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <h4 className="font-medium">Add New Doctor</h4>
+              <div className="grid grid-cols-2 gap-2">
                 <Input
-                  placeholder="Name"
+                  placeholder="Doctor Name"
                   value={newDoctor.name}
                   onChange={(e) => setNewDoctor(prev => ({ ...prev, name: e.target.value }))}
                 />
                 <Input
-                  placeholder="Specialty"
-                  value={newDoctor.specialty}
-                  onChange={(e) => setNewDoctor(prev => ({ ...prev, specialty: e.target.value }))}
+                  placeholder="Employee ID"
+                  value={newDoctor.employee_id}
+                  onChange={(e) => setNewDoctor(prev => ({ ...prev, employee_id: e.target.value }))}
                 />
               </div>
-              <Button onClick={addDoctor} size="sm" className="w-full">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-sm">Primary Specialty</Label>
+                  <Select value={newDoctor.primary_specialty_id} onValueChange={(value) => setNewDoctor(prev => ({ ...prev, primary_specialty_id: value }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select specialty" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {specialties.map((specialty) => (
+                        <SelectItem key={specialty.id} value={specialty.id}>
+                          {specialty.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm">Years Experience</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={newDoctor.years_experience}
+                    onChange={(e) => setNewDoctor(prev => ({ ...prev, years_experience: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <Button onClick={addDoctor} size="sm" className="w-full" disabled={isLoading}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Doctor
               </Button>
             </div>
 
             {/* Doctor List */}
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-96 overflow-y-auto">
               {doctors.map((doctor) => (
                 <div key={doctor.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <div className="font-medium">{doctor.name}</div>
-                    <Badge variant="secondary">{doctor.specialty}</Badge>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium">{doctor.name}</span>
+                      <Badge variant="secondary">
+                        {doctor.primary_specialty?.name || 'No Specialty'}
+                      </Badge>
+                      <Badge variant={doctor.availability_status === 'available' ? 'default' : 'outline'}>
+                        {doctor.availability_status}
+                      </Badge>
+                      {doctor.years_experience > 0 && (
+                        <Badge variant="outline">{doctor.years_experience} years</Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Load: {doctor.current_patient_load}/{doctor.max_patient_capacity}
+                      {doctor.emergency_response_rating && (
+                        <span className="ml-2">Rating: {doctor.emergency_response_rating}/5.0</span>
+                      )}
+                    </div>
                   </div>
                   <Button
                     size="sm"
@@ -594,7 +675,7 @@ export function PatientManagement() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {rankedPatients.map((ranked, index) => {
+                  {rankedPatients.map((ranked) => {
                     const patient = getPatientById(ranked.patient_id);
                     return (
                       <div key={ranked.patient_id} className="flex items-center gap-4 p-3 border rounded-lg">
@@ -603,7 +684,7 @@ export function PatientManagement() {
                         </Badge>
                         <div className="flex-1">
                           <div className="font-medium">{patient?.name || ranked.patient_id}</div>
-                          <div className="text-sm text-muted-foreground">{patient?.condition}</div>
+                          <div className="text-sm text-muted-foreground">{patient?.chief_complaint}</div>
                         </div>
                         {mortalityPredictions[ranked.patient_id] && (
                           <Badge variant="destructive">
@@ -638,12 +719,14 @@ export function PatientManagement() {
                           <div className="flex items-center gap-4">
                             <div>
                               <div className="font-medium">{patient?.name || match.patient_id}</div>
-                              <div className="text-sm text-muted-foreground">{patient?.condition}</div>
+                              <div className="text-sm text-muted-foreground">{patient?.chief_complaint}</div>
                             </div>
                             <div className="text-muted-foreground">→</div>
                             <div>
                               <div className="font-medium">{doctor?.name || match.doctor_id}</div>
-                              <div className="text-sm text-muted-foreground">{doctor?.specialty}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {doctor?.primary_specialty?.name || 'Unknown Specialty'}
+                              </div>
                             </div>
                           </div>
                           <Badge variant="outline">Score: {match.score}</Badge>
@@ -662,4 +745,4 @@ export function PatientManagement() {
       )}
     </div>
   );
-} 
+}
