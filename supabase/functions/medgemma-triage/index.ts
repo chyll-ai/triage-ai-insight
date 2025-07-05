@@ -48,12 +48,16 @@ ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
     console.log('Patient data prepared, length:', patientData.length);
 
     const request = {
-      contents: [
+      instances: [
         {
-          role: "user",
-          parts: [
+          "@requestFormat": "anthropic_messages",
+          messages: [
             {
-              text: `You are an expert ER triage assistant. Analyze the following patient data and return a JSON response with the exact format:
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `You are an expert ER triage assistant. Analyze the following patient data and return a JSON response with the exact format:
 {
   "summary": "Concise clinical summary of the findings",
   "urgency_level": "low | moderate | high | critical",
@@ -71,14 +75,13 @@ Rules:
 - If stable vitals + superficial lesion → flag as low
 
 Return only valid JSON:`
+                }
+              ]
             }
-          ]
+          ],
+          max_tokens: 1000
         }
-      ],
-      generationConfig: {
-        maxOutputTokens: 1000,
-        temperature: 0.1
-      }
+      ]
     };
 
     console.log('Making request to MedGemma 27B endpoint...');
@@ -105,26 +108,29 @@ Return only valid JSON:`
     const data = await response.json();
     console.log('Full MedGemma 27B response:', JSON.stringify(data, null, 2));
     
-    // Check if we have the expected structure
-    if (!data.candidates || !Array.isArray(data.candidates) || data.candidates.length === 0) {
-      console.error('Unexpected response structure - no candidates array:', data);
-      throw new Error('MedGemma 27B returned unexpected response structure');
+    // Check if we have the expected structure from the new endpoint
+    let responseText;
+    if (data.predictions && Array.isArray(data.predictions) && data.predictions.length > 0) {
+      // Handle Vertex AI format
+      const prediction = data.predictions[0];
+      if (prediction.candidates && prediction.candidates.length > 0) {
+        responseText = prediction.candidates[0].content?.parts?.[0]?.text;
+      }
+    } else if (data.content && Array.isArray(data.content) && data.content.length > 0) {
+      // Handle direct Anthropic format
+      responseText = data.content[0]?.text;
+    } else if (typeof data === 'string') {
+      // Handle plain text response
+      responseText = data;
+    } else if (data.response) {
+      // Handle wrapped response
+      responseText = data.response;
     }
     
-    const candidate = data.candidates[0];
-    console.log('First candidate:', JSON.stringify(candidate, null, 2));
-    
-    if (!candidate.content || !candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
-      console.error('No content parts in candidate:', candidate);
-      throw new Error('MedGemma 27B returned no content parts');
-    }
-    
-    // Extract the response text and parse the JSON
-    const responseText = candidate.content.parts[0]?.text;
     console.log('Extracted response text:', responseText);
     
     if (!responseText) {
-      console.error('No text found in content parts:', candidate.content.parts);
+      console.error('No response text found in:', data);
       throw new Error('No response text from MedGemma 27B');
     }
 
