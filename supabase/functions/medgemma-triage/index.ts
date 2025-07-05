@@ -48,12 +48,12 @@ ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
     console.log('Patient data prepared, length:', patientData.length);
 
     const request = {
-      instances: [
+      contents: [
         {
-          messages: [
+          role: "user",
+          parts: [
             {
-              role: "user",
-              content: `You are an expert ER triage assistant. Analyze the following patient data and return a JSON response with the exact format:
+              text: `You are an expert ER triage assistant. Analyze the following patient data and return a JSON response with the exact format:
 {
   "summary": "Concise clinical summary of the findings",
   "urgency_level": "low | moderate | high | critical",
@@ -72,17 +72,19 @@ Rules:
 
 Return only valid JSON:`
             }
-          ],
-          max_tokens: 1000,
-          temperature: 0.1
+          ]
         }
-      ]
+      ],
+      generationConfig: {
+        maxOutputTokens: 1000,
+        temperature: 0.1
+      }
     };
 
     console.log('Making request to MedGemma 27B endpoint...');
     console.log('Request payload:', JSON.stringify(request, null, 2));
     
-    const response = await fetch('https://call-vertex-ai-ii7brcvvyq-ez.a.run.app/', {
+    const response = await fetch('https://us-central1-gemma-hcls25par-714.cloudfunctions.net/call-vertex-ai-27b', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -103,32 +105,26 @@ Return only valid JSON:`
     const data = await response.json();
     console.log('Full MedGemma 27B response:', JSON.stringify(data, null, 2));
     
-    // Check if we have the expected structure for Vertex AI prediction response
-    if (!data.predictions || !Array.isArray(data.predictions) || data.predictions.length === 0) {
-      console.error('Unexpected response structure - no predictions array:', data);
+    // Check if we have the expected structure
+    if (!data.candidates || !Array.isArray(data.candidates) || data.candidates.length === 0) {
+      console.error('Unexpected response structure - no candidates array:', data);
       throw new Error('MedGemma 27B returned unexpected response structure');
     }
     
-    const prediction = data.predictions[0];
-    console.log('First prediction:', JSON.stringify(prediction, null, 2));
+    const candidate = data.candidates[0];
+    console.log('First candidate:', JSON.stringify(candidate, null, 2));
     
-    // Extract the response text from the prediction
-    let responseText;
-    if (prediction.candidates && prediction.candidates[0] && prediction.candidates[0].content && prediction.candidates[0].content.parts && prediction.candidates[0].content.parts[0]) {
-      responseText = prediction.candidates[0].content.parts[0].text;
-    } else if (prediction.content) {
-      responseText = prediction.content;
-    } else if (typeof prediction === 'string') {
-      responseText = prediction;
-    } else {
-      console.error('Unable to extract response text from prediction:', prediction);
-      throw new Error('Unable to extract response text from MedGemma 27B');
+    if (!candidate.content || !candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
+      console.error('No content parts in candidate:', candidate);
+      throw new Error('MedGemma 27B returned no content parts');
     }
     
+    // Extract the response text and parse the JSON
+    const responseText = candidate.content.parts[0]?.text;
     console.log('Extracted response text:', responseText);
     
     if (!responseText) {
-      console.error('No text found in prediction:', prediction);
+      console.error('No text found in content parts:', candidate.content.parts);
       throw new Error('No response text from MedGemma 27B');
     }
 
