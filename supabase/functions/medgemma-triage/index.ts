@@ -7,37 +7,52 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  console.log('MedGemma Triage function called:', req.method);
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
+    console.log('Handling CORS preflight');
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    console.log('Reading request body...');
     const { patientInfo, vitals, notes, image } = await req.json();
+    console.log('Request data received:', { 
+      hasPatientInfo: !!patientInfo, 
+      hasVitals: !!vitals, 
+      hasNotes: !!notes, 
+      hasImage: !!image 
+    });
 
     // Get the Google Cloud token from environment variables
     const authToken = Deno.env.get('GOOGLE_CLOUD_TOKEN');
+    console.log('Auth token check:', { hasToken: !!authToken, tokenLength: authToken?.length || 0 });
+    
     if (!authToken) {
+      console.error('Google Cloud token not configured');
       throw new Error('Google Cloud token not configured');
     }
 
     const patientData = `
 Patient Information:
-- Name: ${patientInfo.fullName}
-- Age: ${patientInfo.age}
-- Sex: ${patientInfo.sex}
-- Chief Complaint: ${patientInfo.chiefComplaint}
+- Name: ${patientInfo?.fullName || 'N/A'}
+- Age: ${patientInfo?.age || 'N/A'}
+- Sex: ${patientInfo?.sex || 'N/A'}
+- Chief Complaint: ${patientInfo?.chiefComplaint || 'N/A'}
 
 Vital Signs:
-- Heart Rate: ${vitals.heartRate} bpm
-- Blood Pressure: ${vitals.bloodPressure}
-- Oxygen Saturation: ${vitals.oxygenSaturation}%
-- Temperature: ${vitals.temperature}°C
-- GCS: ${vitals.gcs}
+- Heart Rate: ${vitals?.heartRate || 'N/A'} bpm
+- Blood Pressure: ${vitals?.bloodPressure || 'N/A'}
+- Oxygen Saturation: ${vitals?.oxygenSaturation || 'N/A'}%
+- Temperature: ${vitals?.temperature || 'N/A'}°C
+- GCS: ${vitals?.gcs || 'N/A'}
 
-Clinical Notes: ${notes}
+Clinical Notes: ${notes || 'N/A'}
 ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
     `.trim();
+
+    console.log('Patient data prepared, length:', patientData.length);
 
     const request = {
       instances: [
@@ -68,6 +83,7 @@ ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
       ]
     };
 
+    console.log('Making request to Vertex AI...');
     const response = await fetch('https://8876697120128630784.us-central1-223266628372.prediction.vertexai.goog/v1/projects/223266628372/locations/us-central1/endpoints/8876697120128630784:predict', {
       method: 'POST',
       headers: {
@@ -77,23 +93,33 @@ ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
       body: JSON.stringify(request),
     });
 
+    console.log('Vertex AI response status:', response.status);
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Vertex AI error:', response.status, errorText);
-      throw new Error(`Vertex AI request failed: ${response.status} ${response.statusText}`);
+      throw new Error(`Vertex AI request failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
+    console.log('Parsing Vertex AI response...');
     const data = await response.json();
+    console.log('Response data structure:', JSON.stringify(data, null, 2));
     
     // Extract the response text and parse the JSON
     const responseText = data.predictions[0]?.candidates[0]?.content?.parts[0]?.text;
+    console.log('Extracted response text:', responseText);
+    
     if (!responseText) {
+      console.error('No response text found in data:', data);
       throw new Error('No response from Vertex AI');
     }
 
     // Try to parse the JSON response
     try {
+      console.log('Attempting to parse JSON response...');
       const parsed = JSON.parse(responseText);
+      console.log('Successfully parsed JSON:', parsed);
+      
       const result = {
         summary: parsed.summary || 'No summary provided',
         urgency_level: parsed.urgency_level || 'low',
@@ -101,23 +127,37 @@ ${image ? 'Medical image provided for analysis.' : 'No medical image provided.'}
         recommended_actions: parsed.recommended_actions || []
       };
 
+      console.log('Returning result:', result);
       return new Response(JSON.stringify(result), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } catch (parseError) {
       console.error('JSON parse error:', parseError, 'Response text:', responseText);
-      throw new Error('Failed to parse triage analysis response');
+      
+      // Return a fallback response instead of throwing an error
+      const fallbackResult = {
+        summary: 'Unable to parse AI response. Raw response: ' + responseText.substring(0, 200),
+        urgency_level: 'low',
+        red_flags: ['Unable to parse AI response'],
+        recommended_actions: ['Manual review required', 'Retry analysis']
+      };
+      
+      return new Response(JSON.stringify(fallbackResult), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
   } catch (error) {
     console.error('Error in medgemma-triage function:', error);
-    return new Response(JSON.stringify({ 
-      error: error.message,
-      summary: 'Error occurred during analysis',
+    
+    const errorResult = {
+      summary: 'Error occurred during analysis: ' + error.message,
       urgency_level: 'low',
-      red_flags: ['System error'],
-      recommended_actions: ['Retry analysis or contact support']
-    }), {
-      status: 500,
+      red_flags: ['System error: ' + error.message],
+      recommended_actions: ['Retry analysis', 'Contact support if error persists']
+    };
+    
+    return new Response(JSON.stringify(errorResult), {
+      status: 200, // Return 200 to avoid client-side errors
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
